@@ -50,20 +50,18 @@ func NewDisplay() *Display {
 // DisplayWelcome shows the application header and welcome message.
 // Simple and professional without fancy ASCII art.
 func (d *Display) DisplayWelcome() {
-	d.header.Println("FIDO2 HMAC Secret Deriver")
-	d.header.Println("=========================")
-	fmt.Println()
-	d.info.Println("Deriving cryptographic secrets using FIDO2/CTAP devices.")
-	d.subtle.Println("Ensure your FIDO2 device is connected via USB.")
-	fmt.Println()
+	d.header.Fprintln(os.Stderr, "FIDO2 HMAC Secret Deriver")
+	d.header.Fprintln(os.Stderr, "=========================")
+	d.info.Fprintln(os.Stderr, "Deriving cryptographic secrets using FIDO2/CTAP devices.")
+	d.subtle.Fprintln(os.Stderr, "Ensure your FIDO2 device is connected via USB.")
 }
 
 // DisplayDevices shows a formatted list of available FIDO2 devices.
 // Each device is displayed with an index, name, manufacturer, and path.
 func (d *Display) DisplayDevices(devices []*types.DeviceInfo) {
-	d.header.Println("Available FIDO2 Devices:")
-	d.header.Println("========================")
-	fmt.Println()
+	d.header.Fprintln(os.Stderr, "Available FIDO2 Devices:")
+	d.header.Fprintln(os.Stderr, "========================")
+	fmt.Fprintln(os.Stderr)
 
 	for _, device := range devices {
 		// Create a formatted device entry
@@ -133,70 +131,70 @@ func (d *Display) GetPIN(prompt string) string {
 // DisplayProgress shows a progress message during long-running operations.
 // This helps users understand what the application is doing.
 func (d *Display) DisplayProgress(message string) {
-	d.info.Printf("[~] %s\n", message)
+	d.info.Fprintf(os.Stderr, "[~] %s\n", message)
 }
 
 // DisplayResults shows the final HMAC derivation results in a beautiful format.
 // This includes the secret in multiple encodings and all relevant metadata.
 func (d *Display) DisplayResults(result *types.HMACResult) {
-	fmt.Println()
-	d.header.Println("HMAC Secret Derivation Complete!")
-	d.header.Println("=================================")
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
+	d.header.Fprintln(os.Stderr, "HMAC Secret Derivation Complete!")
+	d.header.Fprintln(os.Stderr, "=================================")
+	fmt.Fprintln(os.Stderr)
 
 	// Device Information
-	d.highlight.Println("Device Information:")
-	fmt.Printf("   Name: %s\n", result.Device.Name)
-	fmt.Printf("   Manufacturer: %s\n", result.Device.Manufacturer)
-	fmt.Printf("   Path: %s\n", result.Device.Path)
-	fmt.Println()
+	d.highlight.Fprintln(os.Stderr, "Device Information:")
+	fmt.Fprintf(os.Stderr, "   Name: %s\n", result.Device.Name)
+	fmt.Fprintf(os.Stderr, "   Manufacturer: %s\n", result.Device.Manufacturer)
+	fmt.Fprintf(os.Stderr, "   Path: %s\n", result.Device.Path)
+	fmt.Fprintln(os.Stderr)
 
 	// Operation Details
-	d.highlight.Println("Operation Details:")
-	fmt.Printf("   Relying Party: %s\n", result.RelyingParty)
-	fmt.Printf("   Timestamp: %s\n", result.Timestamp.Format(time.RFC3339))
-	fmt.Printf("   Duration: %s\n", time.Since(result.Timestamp).Truncate(time.Millisecond))
-	fmt.Println()
+	d.highlight.Fprintln(os.Stderr, "Operation Details:")
+	fmt.Fprintf(os.Stderr, "   Relying Party: %s\n", result.RelyingParty)
+	fmt.Fprintf(os.Stderr, "   Timestamp: %s\n", result.Timestamp.Format(time.RFC3339))
+	fmt.Fprintf(os.Stderr, "   Duration: %s\n", time.Since(result.Timestamp).Truncate(time.Millisecond))
+	fmt.Fprintln(os.Stderr)
 
 	// Secret Information
-	d.highlight.Println("Derived Secret:")
-	d.success.Printf("   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Secret))
-	fmt.Printf("   Hex:    %s\n", hex.EncodeToString(result.Secret))
-	fmt.Printf("   Length: %d bytes (%d bit)\n", len(result.Secret), len(result.Secret)*8)
-	fmt.Println()
+	d.highlight.Fprintln(os.Stderr, "Derived Secret:")
+	d.success.Fprintf(os.Stderr, "   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Secret))
+	fmt.Fprintf(os.Stderr, "   Hex:    %s\n", hex.EncodeToString(result.Secret))
+	fmt.Fprintf(os.Stderr, "   Length: %d bytes (%d bit)\n", len(result.Secret), len(result.Secret)*8)
+	fmt.Fprintln(os.Stderr)
 
 	// Salt Information
-	d.highlight.Println("Salt Used:")
-	fmt.Printf("   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Salt))
-	fmt.Printf("   Hex:    %s\n", hex.EncodeToString(result.Salt))
-	fmt.Printf("   Length: %d bytes\n", len(result.Salt))
-	fmt.Println()
+	d.highlight.Fprintln(os.Stderr, "Salt Used:")
+	fmt.Fprintf(os.Stderr, "   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Salt))
+	fmt.Fprintf(os.Stderr, "   Hex:    %s\n", hex.EncodeToString(result.Salt))
+	fmt.Fprintf(os.Stderr, "   Length: %d bytes\n", len(result.Salt))
+	fmt.Fprintln(os.Stderr)
 
 	// Credential Information
-	d.highlight.Println("Credential Information:")
-	fmt.Printf("   ID (Base64): %s\n", base64.StdEncoding.EncodeToString(result.CredentialID))
-	fmt.Printf("   ID (Hex):    %s\n", hex.EncodeToString(result.CredentialID))
-	fmt.Printf("   Length:      %d bytes\n", len(result.CredentialID))
-	fmt.Println()
+	d.highlight.Fprintln(os.Stderr, "Credential Information:")
+	fmt.Fprintf(os.Stderr, "   ID (Base64): %s\n", base64.StdEncoding.EncodeToString(result.CredentialID))
+	fmt.Fprintf(os.Stderr, "   ID (Hex):    %s\n", hex.EncodeToString(result.CredentialID))
+	fmt.Fprintf(os.Stderr, "   Length:      %d bytes\n", len(result.CredentialID))
+	fmt.Fprintln(os.Stderr)
 
 	// Security Information
-	d.highlight.Println("Security Information:")
+	d.highlight.Fprintln(os.Stderr, "Security Information:")
 	secretFingerprint := d.calculateFingerprint(result.Secret)
 	saltFingerprint := d.calculateFingerprint(result.Salt)
 	credFingerprint := d.calculateFingerprint(result.CredentialID)
 
-	fmt.Printf("   Secret Fingerprint:     %s\n", secretFingerprint)
-	fmt.Printf("   Salt Fingerprint:       %s\n", saltFingerprint)
-	fmt.Printf("   Credential Fingerprint: %s\n", credFingerprint)
-	fmt.Println()
+	fmt.Fprintf(os.Stderr, "   Secret Fingerprint:     %s\n", secretFingerprint)
+	fmt.Fprintf(os.Stderr, "   Salt Fingerprint:       %s\n", saltFingerprint)
+	fmt.Fprintf(os.Stderr, "   Credential Fingerprint: %s\n", credFingerprint)
+	fmt.Fprintln(os.Stderr)
 
 	// Usage Notes
-	d.info.Println("Usage Notes:")
-	d.subtle.Println("   - The derived secret is unique to this device and salt combination")
-	d.subtle.Println("   - Store the salt securely if you need to reproduce this secret")
-	d.subtle.Println("   - The credential is stored on your FIDO2 device")
-	d.subtle.Println("   - This secret can be used for encryption, authentication, or key derivation")
-	fmt.Println()
+	d.info.Fprintln(os.Stderr, "Usage Notes:")
+	d.subtle.Fprintln(os.Stderr, "   - The derived secret is unique to this device and salt combination")
+	d.subtle.Fprintln(os.Stderr, "   - Store the salt securely if you need to reproduce this secret")
+	d.subtle.Fprintln(os.Stderr, "   - The credential is stored on your FIDO2 device")
+	d.subtle.Fprintln(os.Stderr, "   - This secret can be used for encryption, authentication, or key derivation")
+	fmt.Fprintln(os.Stderr)
 }
 
 // DisplayError shows error messages in a user-friendly format.
@@ -207,7 +205,7 @@ func (d *Display) DisplayError(err error) {
 
 // DisplaySuccess shows success messages with appropriate formatting.
 func (d *Display) DisplaySuccess(message string) {
-	d.success.Printf("[+] %s\n", message)
+	d.success.Fprintf(os.Stderr, "[+] %s\n", message)
 }
 
 // calculateFingerprint creates a short fingerprint for data identification.
@@ -244,7 +242,7 @@ func (d *Display) DisplayWarning(message string) {
 
 // DisplayInfo shows informational messages.
 func (d *Display) DisplayInfo(message string) {
-	d.info.Printf("[~] %s\n", message)
+	d.info.Fprintf(os.Stderr, "[~] %s\n", message)
 }
 
 // ConfirmAction asks the user to confirm an action.
@@ -263,10 +261,10 @@ func (d *Display) ConfirmAction(prompt string) bool {
 	return input == "y" || input == "yes"
 }
 
-// OutputKeyOnly outputs just the derived key to stdout for scripting purposes.
-// This outputs the key in base64 format to stdout, suitable for piping to other tools.
+// OutputKeyOnly outputs just the derived key to stderr for scripting purposes.
+// This outputs the key in base64 format to stderr, suitable for piping to other tools.
 func (d *Display) OutputKeyOnly(result *types.HMACResult) {
-	fmt.Println("----- BEGIN DERIVED KEY -----")
-	fmt.Println(base64.StdEncoding.EncodeToString(result.Secret))
-	fmt.Println("----- END DERIVED KEY -----")
+	fmt.Fprintln(os.Stderr, "----- BEGIN DERIVED KEY -----")
+	fmt.Fprintln(os.Stderr, base64.StdEncoding.EncodeToString(result.Secret))
+	fmt.Fprintln(os.Stderr, "----- END DERIVED KEY -----")
 }

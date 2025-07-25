@@ -36,6 +36,7 @@ type Configuration struct {
 	UserName         string // Username for FIDO2 operations
 	UserDisplayName  string // Display name for FIDO2 operations
 	SaltSize         int    // Size of the salt in bytes (typically 32)
+	Mode             string // enc or dec
 }
 
 // DeviceManager defines the interface for discovering and selecting FIDO2 devices.

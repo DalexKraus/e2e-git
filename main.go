@@ -39,6 +39,7 @@ type Application struct {
 	cryptoProvider types.CryptoProvider // HMAC secret derivation
 	config         *types.Configuration // Application configuration
 	keyOnly        bool                 // Output only the key to stdout
+	Pin            string               // get pin from cmd args
 }
 
 func NewApplication() *Application {
@@ -69,22 +70,16 @@ func (app *Application) Run() error {
 
 	app.ui.DisplaySuccess(fmt.Sprintf("Found %d FIDO2 device(s)", len(devices)))
 
-	selectedDevice, err := app.deviceMgr.SelectDevice(devices)
-	if err != nil {
-		app.ui.DisplayError(err)
-		return fmt.Errorf("device selection failed: %w", err)
+	if len(devices) == 0 {
+		return fmt.Errorf("no FIDO2 devices found")
 	}
+	selectedDevice := devices[0]
+	app.ui.DisplayInfo(fmt.Sprintf("Using device: %s (%s)", selectedDevice.Name, selectedDevice.Path))
 
 	app.ui.DisplayProgress("Validating device accessibility...")
 	if err := app.deviceMgr.ValidateDevice(selectedDevice); err != nil {
 		app.ui.DisplayError(err)
 		return fmt.Errorf("device validation failed: %w", err)
-	}
-
-	pin := app.ui.GetPIN("Enter your FIDO2 device PIN: ")
-	if pin == "" {
-		app.ui.DisplayError(fmt.Errorf("PIN is required for FIDO2 operations"))
-		return fmt.Errorf("no PIN provided")
 	}
 
 	app.ui.DisplayProgress("Validating configuration...")
@@ -96,10 +91,35 @@ func (app *Application) Run() error {
 	app.ui.DisplayInfo("Starting HMAC secret derivation process...")
 	app.ui.DisplayInfo("You will need to touch your FIDO2 device when it blinks")
 
-	result, err := app.cryptoProvider.DeriveHMACSecret(selectedDevice, pin, app.config)
+	result, err := app.cryptoProvider.DeriveHMACSecret(selectedDevice, app.Pin, app.config)
 	if err != nil {
 		app.ui.DisplayError(err)
 		return fmt.Errorf("HMAC secret derivation failed: %w", err)
+	}
+
+	// manual test
+	mode := app.config.Mode
+
+	switch mode {
+	case "enc":
+		app.ui.DisplayInfo(("Encrypting file..."))
+		if err := crypto.Encrypt(result.Secret); err != nil {
+			app.ui.DisplayError(fmt.Errorf("encryption failed: %w", err))
+			return err
+		}
+		app.ui.DisplaySuccess("Encryption completed!")
+
+	case "dec":
+		app.ui.DisplayInfo("Decrypting file...")
+		if err := crypto.Decrypt(result.Secret); err != nil {
+			app.ui.DisplayError(fmt.Errorf("decryption failed: %w", err))
+			return err
+		}
+		app.ui.DisplaySuccess("Decryption completed!")
+
+	default:
+		app.ui.DisplayError(fmt.Errorf("invalid mode: %s (must be 'enc' or 'dec')", mode))
+		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
 	if app.keyOnly {
@@ -114,11 +134,20 @@ func (app *Application) Run() error {
 func main() {
 	// Parse CLI flags
 	keyOnly := flag.Bool("key-only", false, "Output only the derived key to stdout (useful for scripting)")
+	mode := flag.String("mode", "enc", "Operation mode: encryption or decryption (enc|dec)")
+	pin := flag.String("pin", "", "FIDO2 device PIN (non-interactive mode)")
 	flag.Parse()
 
-	// Create the application instance
+	if *pin == "" {
+		fmt.Fprintln(os.Stderr, "Error: --pin is required")
+		fmt.Fprintln(os.Stderr, "Usage: go run main.go --mode=enc --pin=123456")
+		os.Exit(1)
+	}
+
 	app := NewApplication()
 	app.keyOnly = *keyOnly
+	app.config.Mode = *mode
+	app.Pin = *pin // Directly assign the pin
 
 	// Run the application and handle any errors
 	if err := app.Run(); err != nil {
