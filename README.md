@@ -1,4 +1,4 @@
-# M4: Integration of Encryption&Decryption and Git
+# M4: Integration of Encryption | Decryption and Git
 
 A command-line application that demonstrates how to use FIDO2 devices to derive HMAC secrets using the HMAC secret extension. 
 
