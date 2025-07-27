@@ -1,7 +1,1 @@
-# Apply FIDO2 encryption filter to specific files
-*.encrypted filter=fido2encrypt diff=fido2encrypt
-secrets.txt filter=fido2encrypt diff=fido2encrypt
-config.json filter=fido2encrypt diff=fido2encrypt
-
-# Or apply to all files in a specific directory:
-# secrets/* filter=fido2encrypt diff=fido2encrypt
+src/* filter=crypt
