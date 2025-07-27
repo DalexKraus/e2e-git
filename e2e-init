@@ -1,5 +1,5 @@
 #!/bin/bash
-# e2e-git-init: Setup Git filter and pre-commit hook
+# e2e-git-init: Setup Git filter, pre-commit, and post-checkout hook
 
 set -e
 
@@ -28,6 +28,26 @@ fi
 echo "[+] Installing pre-commit hook..."
 cp "$PRE_COMMIT_SOURCE" "$PRE_COMMIT_TARGET"
 chmod +x "$PRE_COMMIT_TARGET"
+
+# Step 4: Install post-checkout hook
+POST_CHECKOUT_SOURCE="post-checkout"
+POST_CHECKOUT_TARGET="$HOOKS_DIR/post-checkout"
+
+if [ ! -f "$POST_CHECKOUT_SOURCE" ]; then
+    echo "[!] 'post-checkout' hook file not found in current directory."
+    exit 1
+fi
+
+echo "[+] Installing post-checkout hook..."
+cp "$POST_CHECKOUT_SOURCE" "$POST_CHECKOUT_TARGET"
+chmod +x "$POST_CHECKOUT_TARGET"
+
+# Step 5: Run post-checkout manually once (simulate clone behavior)
+echo "[+] Running post-checkout manually to trigger decryption..."
+"$POST_CHECKOUT_TARGET" \
+    0000000000000000000000000000000000000000 \
+    "$(git rev-parse HEAD)" \
+    1
 
 echo "[✓] Git encryption environment initialized successfully."
 
