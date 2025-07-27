@@ -29,5 +29,5 @@ if [ -z "$PIN" ]; then
 fi
 
 # Decrypt the content
-./crypto-wrapper decrypt "$PIN"
+./fido2-derive --mode=dec --pin="$PIN"
 
