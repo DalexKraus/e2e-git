@@ -3,6 +3,7 @@
 
 # Don't encrypt these important decryption-related files
 filter-wrapper.sh filter=
+e2e-init filter=
 fido2-derive filter=
 *.cred filter=
 .gitignore filter=
