@@ -1,0 +1,24 @@
+#!/bin/bash
+# post-checkout: Detect encrypted files and decrypt them via smudge filter
+
+LOCKFILE="/tmp/git-decrypt-once-$(git rev-parse --show-toplevel | sha1sum | cut -d' ' -f1)"
+
+# Prevent multiple runs per session
+if [ -f "$LOCKFILE" ]; then
+    echo "[post-checkout] Decryption already performed in this session"
+    exit 0
+fi
+
+touch "$LOCKFILE"
+echo "[post-checkout] Detecting files with filter=crypt..."
+
+# Loop over all tracked files and decrypt those with crypt filter
+git ls-files | while read -r file; do
+    if git check-attr filter -- "$file" 2>/dev/null | grep -q 'filter: crypt'; then
+        echo "[post-checkout] Decrypting: $file"
+        rm -f "$file"
+        git checkout -- "$file"
+    fi
+done
+
+echo "[post-checkout] Decryption complete (this run is one-time per session)"
