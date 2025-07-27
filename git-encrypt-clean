@@ -1,0 +1,12 @@
+#!/bin/bash
+# This runs when adding files to Git (clean filter)
+# It should encrypt the content and output to stdout
+
+PIN="$FIDO2_PIN"  # Set this environment variable
+if [ -z "$PIN" ]; then
+    echo "Error: FIDO2_PIN environment variable not set" >&2
+    exit 1
+fi
+
+# Read from stdin, encrypt, output to stdout
+./fido2-derive --mode=enc --pin="$PIN"
