@@ -1,2 +1,2 @@
-*.c filter=crypt
-*.txt filter=crypt
+src/*.c filter=crypt
+src/*.txt filter=crypt
