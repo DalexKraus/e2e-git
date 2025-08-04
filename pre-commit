@@ -54,7 +54,7 @@ for file in $FILES_TO_ENCRYPT; do
             # Get file mode (usually 100644)
             FILE_MODE=$(git ls-files -s "$file" | awk '{ print $1 }')
 
-            # Update index with encrypted blob — don't touch working file
+            # Update index with encrypted blob - don't touch working file
             git update-index --cacheinfo "$FILE_MODE","$BLOB_HASH","$file"
         else
             echo "Encryption failed for $file" >&2
