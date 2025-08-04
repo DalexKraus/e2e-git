@@ -9,6 +9,10 @@ import (
 	"os"
 )
 
+// Encrypt reads plaintext from stdin, encrypts it using AES-GCM with the provided secret,
+// and writes the resulting ciphertext (with prepended nonce) to stdout.
+// The nonce is randomly generated and included in the output for use during decryption
+// (the nonce is stored at the beginning of the ciphertext)
 func Encrypt(secret []byte) error {
 	plainText, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -36,6 +40,9 @@ func Encrypt(secret []byte) error {
 	return err
 }
 
+// Decrypt reads ciphertext from stdin, extracts the nonce, and decrypts the data using AES-GCM
+// with the provided secret. The resulting plaintext is written to stdout.
+// It expects the nonce to be prepended to the ciphertext (as produced by Encrypt).
 func Decrypt(secret []byte) error {
 	cipherText, err := io.ReadAll(os.Stdin)
 	if err != nil {

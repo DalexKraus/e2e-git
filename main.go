@@ -39,7 +39,7 @@ type Application struct {
 	cryptoProvider types.CryptoProvider // HMAC secret derivation
 	config         *types.Configuration // Application configuration
 	keyOnly        bool                 // Output only the key to stdout
-	Pin            string               // get pin from cmd args
+	Pin            string               // Get pin from command line argument
 }
 
 func NewApplication() *Application {
@@ -97,7 +97,7 @@ func (app *Application) Run() error {
 		return fmt.Errorf("HMAC secret derivation failed: %w", err)
 	}
 
-	// manual test
+	// Handles the selected operation mode ("enc" or "dec")
 	mode := app.config.Mode
 
 	switch mode {
@@ -140,7 +140,7 @@ func main() {
 
 	if *pin == "" {
 		fmt.Fprintln(os.Stderr, "Error: --pin is required")
-		fmt.Fprintln(os.Stderr, "Usage: go run main.go --mode=enc --pin=123456")
+		fmt.Fprintln(os.Stderr, "Usage: go run main.go --mode=enc --pin=1234")
 		os.Exit(1)
 	}
 
