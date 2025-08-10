@@ -1,53 +1,46 @@
 #!/bin/bash
-# e2e-git-init: Setup Git filter, pre-commit, and post-checkout hook
+# e2e-git-init: Setup Git filter, pre-commit hook, and 'git dec' alias (no post-checkout)
 
-set -e
+set -euo pipefail
 
-# Step 1: Ensure we're inside a Git repo
-if ! git rev-parse --git-dir > /dev/null 2>&1; then
-    echo "[!] Not inside a Git repository."
-    exit 1
+# 1) Ensure we're inside a Git repo
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "[!] Not inside a Git repository."
+  exit 1
 fi
 
-# Step 2: Set up Git filter
+# 2) Basic sanity checks
+if [[ ! -x "./filter-wrapper.sh" ]]; then
+  echo "[!] ./filter-wrapper.sh not found or not executable (needed for smudge=decrypt)."
+  echo "    Make sure it's present and 'chmod +x filter-wrapper.sh'."
+  exit 1
+fi
+
+# 3) Configure Git filter
 echo "[+] Configuring Git filter 'crypt'..."
 git config filter.crypt.smudge "./filter-wrapper.sh decrypt"
 git config filter.crypt.clean "cat"
 git config filter.crypt.required true
 
-# Step 3: Install pre-commit hook
-HOOKS_DIR=".git/hooks"
+# 4) Install pre-commit hook
+HOOKS_DIR="$(git rev-parse --git-path hooks)"
 PRE_COMMIT_SOURCE="pre-commit"
 PRE_COMMIT_TARGET="$HOOKS_DIR/pre-commit"
 
-if [ ! -f "$PRE_COMMIT_SOURCE" ]; then
-    echo "[!] 'pre-commit' hook file not found in current directory."
-    exit 1
+if [[ ! -f "$PRE_COMMIT_SOURCE" ]]; then
+  echo "[!] 'pre-commit' file not found in current directory."
+  exit 1
 fi
 
 echo "[+] Installing pre-commit hook..."
+mkdir -p "$HOOKS_DIR"
 cp "$PRE_COMMIT_SOURCE" "$PRE_COMMIT_TARGET"
 chmod +x "$PRE_COMMIT_TARGET"
 
-# Step 4: Install post-checkout hook
-POST_CHECKOUT_SOURCE="post-checkout"
-POST_CHECKOUT_TARGET="$HOOKS_DIR/post-checkout"
+# 5) Add 'git dec' alias (decrypt one or more files via smudge)
+#    Usage: git dec path/to/file1 [file2...]
+echo "[+] Adding 'git dec' alias..."
+git config alias.dec '!f(){ for f in "$@"; do rm -f -- "$f"; git checkout -- "$f"; done; }; f'
 
-if [ ! -f "$POST_CHECKOUT_SOURCE" ]; then
-    echo "[!] 'post-checkout' hook file not found in current directory."
-    exit 1
-fi
-
-echo "[+] Installing post-checkout hook..."
-cp "$POST_CHECKOUT_SOURCE" "$POST_CHECKOUT_TARGET"
-chmod +x "$POST_CHECKOUT_TARGET"
-
-# Step 5: Run post-checkout manually once (simulate clone behavior)
-echo "[+] Running post-checkout manually to trigger decryption..."
-"$POST_CHECKOUT_TARGET" \
-    0000000000000000000000000000000000000000 \
-    "$(git rev-parse HEAD)" \
-    1
-
-echo "[✓] Git encryption environment initialized successfully."
-
+echo "[✓] E2E Git initialized: filter=crypt, pre-commit installed, alias 'git dec' ready."
+echo "    Mark files to encrypt via .gitattributes (e.g., 'secrets/** filter=crypt')."
