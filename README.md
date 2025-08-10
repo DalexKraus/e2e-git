@@ -35,7 +35,7 @@ a custom Git alias `git dec <file>` is provided to:
 
 1. **Create or edit a file** in plaintext.
 2. **Stage & commit** - the pre-commit hook encrypts it (both index & working dir).
-3. **Decrypt for editing**:
+3. **Decrypt the commited file again in the working directory to continue your work/editing**:
    ```bash
    git dec src/a.txt
 
