@@ -5,6 +5,13 @@ The goal is to store and transfer only **encrypted files**, while allowing you t
 
 ---
 
+## Quick Start
+
+First, configure the repository with the required Git filters, hooks, and alias by running:
+
+```bash
+./e2e-init
+```
 ## How It Works
 
 ### 1. Pre-Commit Hook - Encryption
