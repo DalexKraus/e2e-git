@@ -1,4 +1,4 @@
-# FIDO2 Git Encryption
+# E2E: M4 & M5 & M6
 
 This repository implements **end-to-end file encryption in Git** using a FIDO2 security key for encryption key derivation.  
 The goal is to store and transfer only **encrypted files**, while allowing you to decrypt them locally when you need to work on them.
