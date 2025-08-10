@@ -1,72 +1,73 @@
-#!/bin/bash
-# .git/hooks/pre-commit
-# This hook encrypts files before committing
+#!/usr/bin/env bash
+set -euo pipefail
 
 PIN_FILE="/tmp/fido2_pin_cache"
 
 get_pin() {
-    if [ -f "$PIN_FILE" ]; then
-        cat "$PIN_FILE"
-        return
-    fi
-    
-    pin=$(pinentry-gtk-2 --title "FIDO2 PIN" --description "Bitte gib deinen FIDO2-PIN ein." <<EOF | grep ^D | cut -c3-
+  if [[ -f "$PIN_FILE" ]]; then
+    cat "$PIN_FILE"
+    return
+  fi
+  pin=$(pinentry-gtk-2 --title "FIDO2 PIN" --description "Bitte gib deinen FIDO2-PIN ein." <<EOF | grep ^D | cut -c3-
 GETPIN
 EOF
 )
-    
-    if [ -n "$pin" ]; then
-        echo "$pin" > "$PIN_FILE"
-    fi
-    echo "$pin"
+  if [[ -n "$pin" ]]; then
+    printf '%s' "$pin" > "$PIN_FILE"
+  fi
+  printf '%s' "$pin"
 }
 
-# Get list of files to be committed that match our pattern
-FILES_TO_ENCRYPT=$(git diff --cached --name-only --diff-filter=ACM | grep '\.txt$')
-
-if [ -z "$FILES_TO_ENCRYPT" ]; then
-    # No .txt files to encrypt, exit successfully
-    exit 0
-fi
-
-echo "Encrypting files before commit..."
-
-# Get PIN once for all operations
-PIN=$(get_pin)
-if [ -z "$PIN" ]; then
-    echo "No PIN provided, aborting commit." >&2
-    exit 1
-fi
-
-# Track if we need to re-add any files
-RESTAGE_NEEDED=false
-
-# Encrypt each file
-for file in $FILES_TO_ENCRYPT; do
-    if [ -f "$file" ]; then
-        echo "Encrypting: $file"
-        
-        # Create a temporary file for encryption
-        temp_file=$(mktemp)
-        
-        # Encrypt the file content
-	if cat "$file" | ./fido2-derive --mode=enc --pin="$PIN" > "$temp_file"; then
-            # Replace the original file with encrypted version
-            mv "$temp_file" "$file"
-            # Re-stage the encrypted file
-            git add "$file"
-            RESTAGE_NEEDED=true
-        else
-            echo "Failed to encrypt $file" >&2
-            rm -f "$temp_file"
-            exit 1
-        fi
+# Get staged files (Added/Copied/Modified) that have filter=crypt
+mapfile -t FILES < <(
+  git diff --cached --name-only --diff-filter=ACM |
+  while read -r file; do
+    if git check-attr filter -- "$file" | grep -q 'filter: crypt'; then
+      echo "$file"
     fi
+  done
+)
+
+# Nothing to encrypt
+((${#FILES[@]})) || exit 0
+
+echo "[pre-commit] Encrypting & renaming -> .enc"
+
+PIN="$(get_pin)"
+if [[ -z "$PIN" ]]; then
+  echo "[pre-commit] No PIN provided — aborting." >&2
+  exit 1
+fi
+
+for f in "${FILES[@]}"; do
+  # Skip if already ends with .enc
+  [[ "$f" =~ \.enc$ ]] && continue
+
+  if [[ ! -f "$f" ]]; then
+    echo "[pre-commit] Skipping missing file: $f" >&2
+    continue
+  fi
+
+  enc_tmp="$(mktemp)"
+  if ! ./fido2-derive --mode=enc --pin="$PIN" < "$f" > "$enc_tmp"; then
+    echo "[pre-commit] Encryption failed: $f" >&2
+    rm -f "$enc_tmp"
+    exit 1
+  fi
+
+  mv -f "$enc_tmp" "$f"
+  git add -- "$f"
+
+  new="${f}.enc"
+  git rm -q --cached -- "$new" 2>/dev/null || true
+  rm -f -- "$new" 2>/dev/null || true
+
+  git mv -f -- "$f" "$new"
+  git add -- "$new"
+
+  echo "[pre-commit] $f -> $new (encrypted)"
 done
 
-if [ "$RESTAGE_NEEDED" = true ]; then
-    echo "Files encrypted and re-staged for commit."
-fi
-
+echo "[pre-commit] Done."
 exit 0
 
