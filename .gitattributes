@@ -1,2 +1,0 @@
-# Encrypt everything by default
-src/* filter=crypt

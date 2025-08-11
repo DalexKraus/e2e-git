@@ -51,6 +51,10 @@ type DeviceManager interface {
 	// Takes a slice of available devices and returns the selected device or an error.
 	SelectDevice(devices []*DeviceInfo) (*DeviceInfo, error)
 
+	// SelectDeviceByPath finds and returns a device with the specified path.
+	// This allows bypassing interactive device selection when the path is known.
+	SelectDeviceByPath(devices []*DeviceInfo, path string) (*DeviceInfo, error)
+
 	// ValidateDevice checks if a device is still accessible and functional.
 	// Returns an error if the device is no longer accessible.
 	ValidateDevice(device *DeviceInfo) error
@@ -88,25 +92,119 @@ type UIProvider interface {
 	// The PIN input should be hidden from the terminal for security.
 	GetPIN(prompt string) string
 
-	// DisplayProgress shows a progress message during long-running operations.
-	DisplayProgress(message string)
+	// GetPINFromEnvironment retrieves the PIN from the specified environment variable.
+	// Returns the PIN value or an error if the environment variable is not set or empty.
+	GetPINFromEnvironment(envVarName string) (string, error)
 
-	// DisplayResults shows the final HMAC derivation results in a beautiful format.
-	// This includes the secret in multiple encodings and all relevant metadata.
+	// GetPINWithPinentry prompts for a PIN using pinentry if available.
+	// Returns an error with instructions to use environment variable method if pinentry is not available.
+	GetPINWithPinentry(prompt string) (string, error)
+
+	// GetPINWithSpecificPinentry prompts for a PIN using a specific pinentry program.
+	// Takes the pinentry program path as parameter.
+	GetPINWithSpecificPinentry(prompt, pinentryProgram string) (string, error)
+
+	// DisplayDebug shows a progress message during long-running operations.
+	DisplayDebug(message string)
+
+	// DisplayResults shows the final HMAC derivation results.
 	DisplayResults(result *HMACResult)
 
 	// DisplayError shows error messages in a user-friendly format.
 	// Should provide helpful suggestions when possible.
 	DisplayError(err error)
 
-	// DisplaySuccess shows success messages with appropriate formatting.
-	DisplaySuccess(message string)
-
-	// DisplayInfo shows informational messages.
+	// DisplayInfo shows success messages with appropriate formatting.
 	DisplayInfo(message string)
 
 	// OutputKeyOnly outputs just the derived key to stdout for scripting purposes.
 	OutputKeyOnly(result *HMACResult)
+}
+
+// ProcessingStats contains statistics about the file processing operation
+type ProcessingStats struct {
+	TotalFiles     int
+	TotalFolders   int
+	ProcessedFiles int
+}
+
+// Application represents the main application with all its dependencies.
+// This structure follows dependency injection principles for better testability.
+type Application struct {
+	UI             UIProvider     // User interface provider
+	DeviceMgr      DeviceManager  // Device discovery and selection
+	CryptoProvider CryptoProvider // HMAC secret derivation
+	Config         *Configuration // Application configuration
+	KeyOnly        bool           // Output only the key to stdout
+	FidoDevice     string         // Specific FIDO device path (optional)
+	PinEnvVar      string         // Environment variable name for PIN (optional)
+	Pinentry       string         // Pinentry program path (optional)
+	FilePaths      []string       // File paths to process
+	LogLevel       string         // Log level: info or debug
+}
+
+// InitConfig holds configuration for the init command
+type InitConfig struct {
+	TargetPath     string
+	PinentryMethod string
+	BinaryPath     string
+}
+
+// InitCommand handles the initialization of a git repository with FIDO2 encryption
+type InitCommand struct {
+	Config *InitConfig
+}
+
+// TemplateConfig holds configuration values for template substitution
+type TemplateConfig struct {
+	BinaryPath     string
+	PinentryMethod string
+}
+
+// TemplateProcessor handles template file processing and substitution
+type TemplateProcessor struct {
+	TemplatesDir string
+	Config       *TemplateConfig
+}
+
+// GitRepository represents a git repository and provides operations for configuration
+type GitRepository struct {
+	Path string
+}
+
+// Manager implements the DeviceManager interface for FIDO2 device operations.
+// It uses the libfido2 library to discover and interact with FIDO2 devices.
+type Manager struct {
+	UI UIProvider // UI provider for user interaction
+}
+
+// Provider implements the CryptoProvider interface for FIDO2 HMAC operations.
+// It handles the complete process of creating credentials and deriving HMAC secrets.
+type Provider struct {
+	UI UIProvider // UI provider for user interaction and progress updates
+}
+
+// Display implements the UIProvider interface.
+// It provides progress indicators, colored text,
+// and well-formatted output.
+type Display struct {
+	// Color functions for different types of output
+	Header    interface{} // *color.Color
+	Success   interface{} // *color.Color
+	Error     interface{} // *color.Color
+	Warning   interface{} // *color.Color
+	Info      interface{} // *color.Color
+	Highlight interface{} // *color.Color
+	Subtle    interface{} // *color.Color
+	LogLevel  string      // "info" or "debug"
+}
+
+// PinentryClient handles communication with the pinentry program.
+type PinentryClient struct {
+	Cmd    interface{} // *exec.Cmd
+	Stdin  interface{} // io.WriteCloser
+	Stdout interface{} // io.ReadCloser
+	Reader interface{} // *bufio.Reader
 }
 
 // DefaultConfiguration returns the default application configuration.

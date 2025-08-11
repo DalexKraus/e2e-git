@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"fido2-hmac-deriver/internal/types"
+	"e2e-git/internal/types"
+	"e2e-git/internal/ui"
 
 	"github.com/keys-pub/go-libfido2"
 )
@@ -104,9 +105,52 @@ func (m *Manager) SelectDevice(devices []*types.DeviceInfo) (*types.DeviceInfo, 
 
 	// Return the selected device (convert from 1-based to 0-based indexing)
 	selectedDevice := devices[choice-1]
-	m.ui.DisplaySuccess(fmt.Sprintf("Selected device: %s (%s)", selectedDevice.Name, selectedDevice.Manufacturer))
+	m.ui.DisplayInfo(fmt.Sprintf("Selected device: %s (%s)", selectedDevice.Name, selectedDevice.Manufacturer))
 
 	return selectedDevice, nil
+}
+
+// SelectDeviceByPath finds and returns a device with the specified path.
+// This allows bypassing interactive device selection when the path is known.
+//
+// Parameters:
+//   - devices: A slice of available DeviceInfo structures
+//   - path: The device path to search for (e.g., "/dev/hidraw10")
+//
+// Returns:
+//   - The DeviceInfo matching the specified path
+//   - An error if the device is not found or path is invalid
+func (m *Manager) SelectDeviceByPath(devices []*types.DeviceInfo, path string) (*types.DeviceInfo, error) {
+	// Validate input
+	if len(devices) == 0 {
+		return nil, errors.New("no devices provided for selection")
+	}
+
+	if path == "" {
+		return nil, errors.New("device path cannot be empty")
+	}
+
+	// Search for the device with the specified path
+	for _, device := range devices {
+		if device.Path == path {
+			// Only show detailed message in debug mode
+			if display, ok := m.ui.(*ui.Display); ok && display.GetLogLevel() == "debug" {
+				m.ui.DisplayInfo(fmt.Sprintf("Using device: %s (%s) at %s", device.Name, device.Manufacturer, device.Path))
+			}
+			return device, nil
+		}
+	}
+
+	// Device not found - provide helpful error message
+	availablePaths := make([]string, len(devices))
+	for i, device := range devices {
+		availablePaths[i] = device.Path
+	}
+
+	return nil, fmt.Errorf("device with path '%s' not found\n\nAvailable devices:\n%v\n\nPlease check:\n"+
+		"- The device is connected via USB\n"+
+		"- The path is correct (case-sensitive)\n"+
+		"- You have permission to access the device", path, availablePaths)
 }
 
 // ValidateDevice checks if a device is still accessible and functional.

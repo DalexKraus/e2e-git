@@ -17,7 +17,7 @@ First, configure the repository with the required Git filters, hooks, and alias 
 ### 1. Pre-Commit Hook - Encryption
 Before each commit, the **pre-commit hook**:
 - Detects staged files with the `filter=crypt` attribute (from `.gitattributes`)
-- Encrypts their contents using `fido2-derive` and your FIDO2 device
+- Encrypts their contents using `e2e-git` and your FIDO2 device
 - **Replaces the file in both the index and the working directory** with the encrypted version
 
 This ensures that **no plaintext is left on disk** after committing.

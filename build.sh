@@ -8,8 +8,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-PROJECT_NAME="fido2-hmac-deriver"
-BINARY_NAME="fido2-hmac-deriver"
+PROJECT_NAME="e2e-git"
+BINARY_NAME="e2e-git"
 GO_MIN_VERSION="1.21"
 
 echo -e "${BLUE}=== FIDO2 HMAC Deriver Build Script ===${NC}"
@@ -61,6 +61,13 @@ check_libfido2() {
     if ! pkg-config --exists libfido2; then
         print_error "libfido2 development libraries not found"
         print_error "Install with: sudo apt-get install libfido2-dev"
+        exit 1
+    fi
+
+    # Check for libfido2
+    if ! pkg-config --exists pinentry-gtk; then
+        print_error "pinentry-gtk not found"
+        print_error "Install with: sudo apt-get install pinentry-gtk"
         exit 1
     fi
     

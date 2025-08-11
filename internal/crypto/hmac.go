@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"fido2-hmac-deriver/internal/types"
+	"e2e-git/internal/types"
 
 	"github.com/keys-pub/go-libfido2"
 )
@@ -50,7 +50,7 @@ func NewProvider(ui types.UIProvider) *Provider {
 //   - An error if any step of the process fails
 func (p *Provider) DeriveHMACSecret(device *types.DeviceInfo, pin string, config *types.Configuration) (*types.HMACResult, error) {
 	// Step 1: Connect to the FIDO2 device
-	p.ui.DisplayProgress("Connecting to FIDO2 device...")
+	p.ui.DisplayDebug("Connecting to FIDO2 device...")
 	dev, err := libfido2.NewDevice(device.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to device %s: %w\n\nTroubleshooting:\n"+
@@ -60,7 +60,7 @@ func (p *Provider) DeriveHMACSecret(device *types.DeviceInfo, pin string, config
 	}
 
 	// Step 2: Generate a deterministic salt for HMAC derivation
-	p.ui.DisplayProgress("Generating deterministic salt...")
+	p.ui.DisplayDebug("Generating deterministic salt...")
 	salt, err := p.generateDeterministicSalt(config.SaltSize, device, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate salt: %w", err)
@@ -71,7 +71,7 @@ func (p *Provider) DeriveHMACSecret(device *types.DeviceInfo, pin string, config
 	existingCredentialID, err := p.loadCredentialID(device, config)
 	if err != nil {
 		// No existing credential found, create a new one
-		p.ui.DisplayProgress("Creating FIDO2 credential (please touch your device when it blinks)...")
+		p.ui.DisplayDebug("Creating FIDO2 credential (please touch your device when it blinks)...")
 		attestation, err := p.createCredential(dev, pin, config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create FIDO2 credential: %w", err)
@@ -86,11 +86,11 @@ func (p *Provider) DeriveHMACSecret(device *types.DeviceInfo, pin string, config
 	} else {
 		// Use existing credential
 		credentialID = existingCredentialID
-		p.ui.DisplayProgress("Using existing credential...")
+		p.ui.DisplayDebug("Using existing credential...")
 	}
 
 	// Step 4: Derive the HMAC secret using the credential
-	p.ui.DisplayProgress("Deriving HMAC secret (please touch your device when it blinks)...")
+	p.ui.DisplayInfo("Deriving HMAC secret (please touch your device when it blinks)...")
 	secret, err := p.deriveSecret(dev, credentialID, salt, pin, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive HMAC secret: %w", err)
@@ -106,7 +106,7 @@ func (p *Provider) DeriveHMACSecret(device *types.DeviceInfo, pin string, config
 		RelyingParty: config.RelyingPartyID,
 	}
 
-	p.ui.DisplaySuccess("HMAC secret derived successfully!")
+	p.ui.DisplayDebug("HMAC secret derived successfully!")
 	return result, nil
 }
 
@@ -208,10 +208,10 @@ func (p *Provider) createCredential(dev *libfido2.Device, pin string, config *ty
 
 	if err != nil {
 		return nil, fmt.Errorf("credential creation failed: %w\n\nPossible causes:\n"+
-			"• Incorrect PIN entered\n"+
-			"• Device doesn't support HMAC secret extension\n"+
-			"• User didn't touch the device when prompted\n"+
-			"• Device is in an error state", err)
+			"- Incorrect PIN entered\n"+
+			"- Device doesn't support HMAC secret extension\n"+
+			"- User didn't touch the device when prompted\n"+
+			"- Device is in an error state", err)
 	}
 
 	return credential, nil
@@ -252,18 +252,18 @@ func (p *Provider) deriveSecret(dev *libfido2.Device, credentialID, salt []byte,
 
 	if err != nil {
 		return nil, fmt.Errorf("HMAC secret derivation failed: %w\n\nPossible causes:\n"+
-			"• Incorrect PIN entered\n"+
-			"• User didn't touch the device when prompted\n"+
-			"• Credential is not valid or has been removed\n"+
-			"• Device communication error", err)
+			"- Incorrect PIN entered\n"+
+			"- User didn't touch the device when prompted\n"+
+			"- Credential is not valid or has been removed\n"+
+			"- Device communication error", err)
 	}
 
 	// Validate that we actually got an HMAC secret
 	if len(assertion.HMACSecret) == 0 {
 		return nil, fmt.Errorf("device returned empty HMAC secret\n\nThis may indicate:\n" +
-			"• The device doesn't properly support HMAC secret extension\n" +
-			"• The credential wasn't created with HMAC secret extension\n" +
-			"• A device firmware issue")
+			"- The device doesn't properly support HMAC secret extension\n" +
+			"- The credential wasn't created with HMAC secret extension\n" +
+			"- A device firmware issue")
 	}
 
 	return assertion.HMACSecret, nil
@@ -357,7 +357,7 @@ func (p *Provider) loadCredentialID(device *types.DeviceInfo, config *types.Conf
 				continue
 			}
 
-			p.ui.DisplayInfo(fmt.Sprintf("Found existing credential in %s", file.Name()))
+			p.ui.DisplayInfo(fmt.Sprintf("Using existing credential in %s", file.Name()))
 			return credentialID, nil
 		}
 	}

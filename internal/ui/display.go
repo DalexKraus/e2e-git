@@ -1,5 +1,5 @@
 // Package ui handles user interface and display formatting.
-// This package provides beautiful, colored output and user interaction
+// This package provides colored output and user interaction
 // for the FIDO2 HMAC secret derivation application.
 package ui
 
@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"fido2-hmac-deriver/internal/types"
+	"e2e-git/internal/pinentry"
+	"e2e-git/internal/types"
 
 	"github.com/fatih/color"
 	"golang.org/x/term"
 )
 
-// Display implements the UIProvider interface with beautiful colored output.
-// It provides a rich user experience with progress indicators, colored text,
-// and well-formatted output.
+// Display implements the UIProvider interface with colored output.
+// It provides progress indicators, colored text, and well-formatted output.
 type Display struct {
 	// Color functions for different types of output
 	header    *color.Color
@@ -31,6 +31,7 @@ type Display struct {
 	info      *color.Color
 	highlight *color.Color
 	subtle    *color.Color
+	logLevel  string // "info" or "debug"
 }
 
 // NewDisplay creates a new display provider with predefined color scheme.
@@ -44,16 +45,29 @@ func NewDisplay() *Display {
 		info:      color.New(color.FgBlue),
 		highlight: color.New(color.FgMagenta, color.Bold),
 		subtle:    color.New(color.FgHiBlack),
+		logLevel:  "info", // Default to info for cleaner output
 	}
+}
+
+// SetLogLevel sets the log level for the display provider.
+func (d *Display) SetLogLevel(level string) {
+	d.logLevel = level
+}
+
+// GetLogLevel returns the current log level.
+func (d *Display) GetLogLevel() string {
+	return d.logLevel
 }
 
 // DisplayWelcome shows the application header and welcome message.
 // Simple and professional without fancy ASCII art.
 func (d *Display) DisplayWelcome() {
-	d.header.Fprintln(os.Stderr, "FIDO2 HMAC Secret Deriver")
-	d.header.Fprintln(os.Stderr, "=========================")
-	d.info.Fprintln(os.Stderr, "Deriving cryptographic secrets using FIDO2/CTAP devices.")
-	d.subtle.Fprintln(os.Stderr, "Ensure your FIDO2 device is connected via USB.")
+	if d.logLevel == "debug" {
+		d.header.Fprintln(os.Stderr, "FIDO2 HMAC Secret Deriver")
+		d.header.Fprintln(os.Stderr, "=========================")
+		d.info.Fprintln(os.Stderr, "Deriving cryptographic secrets using FIDO2/CTAP devices.")
+		d.subtle.Fprintln(os.Stderr, "Ensure your FIDO2 device is connected via USB.")
+	}
 }
 
 // DisplayDevices shows a formatted list of available FIDO2 devices.
@@ -128,73 +142,105 @@ func (d *Display) GetPIN(prompt string) string {
 	return strings.TrimSpace(string(pinBytes))
 }
 
-// DisplayProgress shows a progress message during long-running operations.
-// This helps users understand what the application is doing.
-func (d *Display) DisplayProgress(message string) {
-	d.info.Fprintf(os.Stderr, "[~] %s\n", message)
+// GetPINFromEnvironment retrieves the PIN from the specified environment variable.
+// Returns the PIN value or an error if the environment variable is not set or empty.
+func (d *Display) GetPINFromEnvironment(envVarName string) (string, error) {
+	if envVarName == "" {
+		return "", fmt.Errorf("environment variable name cannot be empty")
+	}
+
+	pin := os.Getenv(envVarName)
+	if pin == "" {
+		return "", fmt.Errorf("environment variable '%s' is not set or is empty\n\nPlease set the environment variable:\n"+
+			"  export %s=\"your_pin_here\"\n"+
+			"Or run without --pin-environment-variable to enter PIN interactively", envVarName, envVarName)
+	}
+
+	pin = strings.TrimSpace(pin)
+	if pin == "" {
+		return "", fmt.Errorf("environment variable '%s' contains only whitespace", envVarName)
+	}
+
+	if d.logLevel == "debug" {
+		d.success.Printf("PIN retrieved from environment variable '%s'\n", envVarName)
+	}
+	return pin, nil
 }
 
-// DisplayResults shows the final HMAC derivation results in a beautiful format.
+// GetPINWithPinentry prompts for a PIN using pinentry if available.
+// Returns an error with instructions to use environment variable method if pinentry is not available.
+func (d *Display) GetPINWithPinentry(prompt string) (string, error) {
+	// Use the pinentry package to get PIN securely
+	description := "Enter your FIDO2 device PIN"
+	return pinentry.GetPINWithPinentry(prompt, description)
+}
+
+// GetPINWithSpecificPinentry prompts for a PIN using a specific pinentry program.
+// Takes the pinentry program path as parameter.
+func (d *Display) GetPINWithSpecificPinentry(prompt, pinentryProgram string) (string, error) {
+	// Use the pinentry package with a specific program
+	description := "Enter your FIDO2 device PIN"
+	return pinentry.GetPINWithSpecificPinentry(prompt, description, pinentryProgram)
+}
+
+// GetPINWithSpecificPinentryForOperation prompts for a PIN using a specific pinentry program
+// with operation-specific description text.
+func (d *Display) GetPINWithSpecificPinentryForOperation(prompt, pinentryProgram, mode string) (string, error) {
+	var description string
+	switch mode {
+	case "enc":
+		description = "Enter your FIDO2 PIN to encrypt your files"
+	case "dec":
+		description = "Enter your FIDO2 PIN to decrypt your files"
+	default:
+		description = "Enter your FIDO2 device PIN"
+	}
+	return pinentry.GetPINWithSpecificPinentry(prompt, description, pinentryProgram)
+}
+
+// DisplayDebug shows a progress message during long-running operations.
+// This helps users understand what the application is doing.
+func (d *Display) DisplayDebug(message string) {
+	if d.logLevel == "debug" {
+		d.info.Fprintf(os.Stderr, "[~] %s\n", message)
+	}
+}
+
+// DisplayResults shows the final HMAC derivation results.
 // This includes the secret in multiple encodings and all relevant metadata.
 func (d *Display) DisplayResults(result *types.HMACResult) {
-	fmt.Fprintln(os.Stderr)
-	d.header.Fprintln(os.Stderr, "HMAC Secret Derivation Complete!")
-	d.header.Fprintln(os.Stderr, "=================================")
-	fmt.Fprintln(os.Stderr)
+	if d.logLevel == "debug" {
+		fmt.Fprintln(os.Stderr)
+		d.header.Fprintln(os.Stderr, "HMAC Secret Derivation Complete!")
+		d.header.Fprintln(os.Stderr, "=================================")
+		fmt.Fprintln(os.Stderr)
 
-	// Device Information
-	d.highlight.Fprintln(os.Stderr, "Device Information:")
-	fmt.Fprintf(os.Stderr, "   Name: %s\n", result.Device.Name)
-	fmt.Fprintf(os.Stderr, "   Manufacturer: %s\n", result.Device.Manufacturer)
-	fmt.Fprintf(os.Stderr, "   Path: %s\n", result.Device.Path)
-	fmt.Fprintln(os.Stderr)
+		// Device Information
+		d.highlight.Fprintln(os.Stderr, "Device Information:")
+		fmt.Fprintf(os.Stderr, "   Name: %s\n", result.Device.Name)
+		fmt.Fprintf(os.Stderr, "   Manufacturer: %s\n", result.Device.Manufacturer)
+		fmt.Fprintf(os.Stderr, "   Path: %s\n", result.Device.Path)
+		fmt.Fprintln(os.Stderr)
 
-	// Operation Details
-	d.highlight.Fprintln(os.Stderr, "Operation Details:")
-	fmt.Fprintf(os.Stderr, "   Relying Party: %s\n", result.RelyingParty)
-	fmt.Fprintf(os.Stderr, "   Timestamp: %s\n", result.Timestamp.Format(time.RFC3339))
-	fmt.Fprintf(os.Stderr, "   Duration: %s\n", time.Since(result.Timestamp).Truncate(time.Millisecond))
-	fmt.Fprintln(os.Stderr)
+		// Operation Details
+		d.highlight.Fprintln(os.Stderr, "Operation Details:")
+		fmt.Fprintf(os.Stderr, "   Relying Party: %s\n", result.RelyingParty)
+		fmt.Fprintf(os.Stderr, "   Timestamp: %s\n", result.Timestamp.Format(time.RFC3339))
+		fmt.Fprintf(os.Stderr, "   Duration: %s\n", time.Since(result.Timestamp).Truncate(time.Millisecond))
+		fmt.Fprintln(os.Stderr)
 
-	// Secret Information
-	d.highlight.Fprintln(os.Stderr, "Derived Secret:")
-	d.success.Fprintf(os.Stderr, "   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Secret))
-	fmt.Fprintf(os.Stderr, "   Hex:    %s\n", hex.EncodeToString(result.Secret))
-	fmt.Fprintf(os.Stderr, "   Length: %d bytes (%d bit)\n", len(result.Secret), len(result.Secret)*8)
-	fmt.Fprintln(os.Stderr)
+		// Security Information
+		d.highlight.Fprintln(os.Stderr, "Security Information:")
+		secretFingerprint := d.calculateFingerprint(result.Secret)
+		saltFingerprint := d.calculateFingerprint(result.Salt)
+		credFingerprint := d.calculateFingerprint(result.CredentialID)
 
-	// Salt Information
-	d.highlight.Fprintln(os.Stderr, "Salt Used:")
-	fmt.Fprintf(os.Stderr, "   Base64: %s\n", base64.StdEncoding.EncodeToString(result.Salt))
-	fmt.Fprintf(os.Stderr, "   Hex:    %s\n", hex.EncodeToString(result.Salt))
-	fmt.Fprintf(os.Stderr, "   Length: %d bytes\n", len(result.Salt))
-	fmt.Fprintln(os.Stderr)
-
-	// Credential Information
-	d.highlight.Fprintln(os.Stderr, "Credential Information:")
-	fmt.Fprintf(os.Stderr, "   ID (Base64): %s\n", base64.StdEncoding.EncodeToString(result.CredentialID))
-	fmt.Fprintf(os.Stderr, "   ID (Hex):    %s\n", hex.EncodeToString(result.CredentialID))
-	fmt.Fprintf(os.Stderr, "   Length:      %d bytes\n", len(result.CredentialID))
-	fmt.Fprintln(os.Stderr)
-
-	// Security Information
-	d.highlight.Fprintln(os.Stderr, "Security Information:")
-	secretFingerprint := d.calculateFingerprint(result.Secret)
-	saltFingerprint := d.calculateFingerprint(result.Salt)
-	credFingerprint := d.calculateFingerprint(result.CredentialID)
-
-	fmt.Fprintf(os.Stderr, "   Secret Fingerprint:     %s\n", secretFingerprint)
-	fmt.Fprintf(os.Stderr, "   Salt Fingerprint:       %s\n", saltFingerprint)
-	fmt.Fprintf(os.Stderr, "   Credential Fingerprint: %s\n", credFingerprint)
-	fmt.Fprintln(os.Stderr)
-
-	// Usage Notes
-	d.info.Fprintln(os.Stderr, "Usage Notes:")
-	d.subtle.Fprintln(os.Stderr, "   - The derived secret is unique to this device and salt combination")
-	d.subtle.Fprintln(os.Stderr, "   - Store the salt securely if you need to reproduce this secret")
-	d.subtle.Fprintln(os.Stderr, "   - The credential is stored on your FIDO2 device")
-	d.subtle.Fprintln(os.Stderr, "   - This secret can be used for encryption, authentication, or key derivation")
-	fmt.Fprintln(os.Stderr)
+		fmt.Fprintf(os.Stderr, "   Secret Fingerprint:     %s\n", secretFingerprint)
+		fmt.Fprintf(os.Stderr, "   Salt Fingerprint:       %s\n", saltFingerprint)
+		fmt.Fprintf(os.Stderr, "   Credential Fingerprint: %s\n", credFingerprint)
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // DisplayError shows error messages in a user-friendly format.
@@ -203,8 +249,8 @@ func (d *Display) DisplayError(err error) {
 	d.error.Printf("[!] %v\n", err)
 }
 
-// DisplaySuccess shows success messages with appropriate formatting.
-func (d *Display) DisplaySuccess(message string) {
+// DisplayInfo shows success messages with appropriate formatting.
+func (d *Display) DisplayInfo(message string) {
 	d.success.Fprintf(os.Stderr, "[+] %s\n", message)
 }
 
@@ -238,11 +284,6 @@ func (d *Display) DisplayStep(step int, total int, description string) {
 // DisplayWarning shows warning messages that need user attention.
 func (d *Display) DisplayWarning(message string) {
 	d.warning.Printf("[!] %s\n", message)
-}
-
-// DisplayInfo shows informational messages.
-func (d *Display) DisplayInfo(message string) {
-	d.info.Fprintf(os.Stderr, "[~] %s\n", message)
 }
 
 // ConfirmAction asks the user to confirm an action.
