@@ -110,6 +110,28 @@ func (m *Manager) SelectDevice(devices []*types.DeviceInfo) (*types.DeviceInfo, 
 	return selectedDevice, nil
 }
 
+// SelectFirstDevice automatically selects the first available device.
+// This bypasses interactive device selection and always uses the first device found.
+//
+// Parameters:
+//   - devices: A slice of available DeviceInfo structures
+//
+// Returns:
+//   - The first DeviceInfo in the slice
+//   - An error if no devices are available
+func (m *Manager) SelectFirstDevice(devices []*types.DeviceInfo) (*types.DeviceInfo, error) {
+	// Validate input
+	if len(devices) == 0 {
+		return nil, errors.New("no devices available for automatic selection")
+	}
+
+	// Always select the first device
+	selectedDevice := devices[0]
+	m.ui.DisplayInfo(fmt.Sprintf("Automatically selected device: %s (%s)", selectedDevice.Name, selectedDevice.Manufacturer))
+
+	return selectedDevice, nil
+}
+
 // SelectDeviceByPath finds and returns a device with the specified path.
 // This allows bypassing interactive device selection when the path is known.
 //

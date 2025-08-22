@@ -114,9 +114,19 @@ func (gr *GitRepository) InstallHook(hookName, sourceContent string) error {
 	return nil
 }
 
-// InstallFilterScript installs a filter script in the repository
+// InstallFilterScript installs a filter script in the git hooks directory
 func (gr *GitRepository) InstallFilterScript(scriptName, content string) error {
-	scriptPath := filepath.Join(gr.Path, scriptName)
+	hooksDir, err := gr.GetHooksDir()
+	if err != nil {
+		return err
+	}
+
+	// Ensure hooks directory exists
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hooks directory: %w", err)
+	}
+
+	scriptPath := filepath.Join(hooksDir, scriptName)
 
 	if err := os.WriteFile(scriptPath, []byte(content), 0755); err != nil {
 		return fmt.Errorf("failed to write filter script: %w", err)

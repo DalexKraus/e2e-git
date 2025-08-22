@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"e2e-git/internal/cache"
 	"e2e-git/internal/crypto"
 	"e2e-git/internal/device"
 	"e2e-git/internal/types"
@@ -33,89 +34,13 @@ func NewApplication() *types.Application {
 func runApplication(app *types.Application) error {
 	app.UI.DisplayWelcome()
 
-	app.UI.DisplayDebug("Searching for FIDO2 devices...")
-	devices, err := app.DeviceMgr.ListDevices()
-	if err != nil {
-		app.UI.DisplayError(err)
-		return fmt.Errorf("device discovery failed: %w", err)
-	}
-
-	app.UI.DisplayDebug(fmt.Sprintf("Found %d FIDO2 device(s)", len(devices)))
-
-	// Device selection: use specified device path or interactive selection
-	var selectedDevice *types.DeviceInfo
-	if app.FidoDevice != "" {
-		// Non-interactive mode: select device by path
-		selectedDevice, err = app.DeviceMgr.SelectDeviceByPath(devices, app.FidoDevice)
-		if err != nil {
-			app.UI.DisplayError(err)
-			return fmt.Errorf("device selection by path failed: %w", err)
-		}
-	} else {
-		// Interactive mode: let user select device
-		selectedDevice, err = app.DeviceMgr.SelectDevice(devices)
-		if err != nil {
-			app.UI.DisplayError(err)
-			return fmt.Errorf("device selection failed: %w", err)
-		}
-	}
-
-	app.UI.DisplayDebug("Validating device accessibility...")
-	if err := app.DeviceMgr.ValidateDevice(selectedDevice); err != nil {
-		app.UI.DisplayError(err)
-		return fmt.Errorf("device validation failed: %w", err)
-	}
-
-	// PIN retrieval: require either environment variable or pinentry
-	var pin string
-	if app.PinEnvVar != "" {
-		// Use PIN from environment variable
-		pin, err = app.UI.GetPINFromEnvironment(app.PinEnvVar)
-		if err != nil {
-			app.UI.DisplayError(err)
-			return fmt.Errorf("PIN retrieval from environment failed: %w", err)
-		}
-		// Show PIN source for info level
-		if app.LogLevel == "info" {
-			app.UI.DisplayInfo(fmt.Sprintf("Using FIDO2 PIN from environment variable '%s'", app.PinEnvVar))
-		}
-	} else if app.Pinentry != "" {
-		// Use specified pinentry program for secure PIN input with operation-specific text
-		if display, ok := app.UI.(*ui.Display); ok {
-			pin, err = display.GetPINWithSpecificPinentryForOperation("PIN:", app.Pinentry, app.Config.Mode)
-		} else {
-			pin, err = app.UI.GetPINWithSpecificPinentry("PIN:", app.Pinentry)
-		}
-		if err != nil {
-			app.UI.DisplayError(err)
-			return fmt.Errorf("PIN retrieval with pinentry failed: %w", err)
-		}
-		if pin == "" {
-			app.UI.DisplayError(fmt.Errorf("PIN is required for FIDO2 operations"))
-			return fmt.Errorf("no PIN provided")
-		}
-		// Show PIN source for info level
-		if app.LogLevel == "info" {
-			app.UI.DisplayInfo(fmt.Sprintf("Using FIDO2 PIN from pinentry program '%s'", app.Pinentry))
-		}
-	} else {
-		// Neither environment variable nor pinentry specified - fail
-		err := fmt.Errorf("PIN input method required. Use either:\n" +
-			"  --pin-environment-variable=VAR_NAME (to use environment variable)\n" +
-			"  --pinentry=PROGRAM (to use pinentry program, e.g., pinentry-gtk)")
-		app.UI.DisplayError(err)
-		return err
-	}
-
 	app.UI.DisplayDebug("Validating configuration...")
 	if err := app.CryptoProvider.ValidateConfiguration(app.Config); err != nil {
 		app.UI.DisplayError(err)
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	app.UI.DisplayDebug("Starting HMAC secret derivation process...")
-
-	result, err := app.CryptoProvider.DeriveHMACSecret(selectedDevice, pin, app.Config)
+	secret, err := cache.GetSecretWithFullCache(app)
 	if err != nil {
 		app.UI.DisplayError(err)
 		return fmt.Errorf("HMAC secret derivation failed: %w", err)
@@ -123,6 +48,8 @@ func runApplication(app *types.Application) error {
 
 	// If --key-only is specified, output the key and exit early
 	if app.KeyOnly {
+		// Create a result struct for compatibility with OutputKeyOnly
+		result := &types.HMACResult{Secret: secret}
 		app.UI.OutputKeyOnly(result)
 		return nil
 	}
@@ -133,26 +60,24 @@ func runApplication(app *types.Application) error {
 
 	switch mode {
 	case "enc":
-		if err := crypto.EncryptFiles(result.Secret, app.FilePaths); err != nil {
+		if err := crypto.EncryptFilesWithOptions(secret, app.FilePaths, app.Quiet); err != nil {
 			app.UI.DisplayError(fmt.Errorf("encryption failed: %w", err))
 			return err
 		}
 		operationDuration := time.Since(operationStartTime)
-		if app.LogLevel == "info" {
+		if app.LogLevel == "debug" && !app.Quiet {
 			app.UI.DisplayInfo(fmt.Sprintf("Encryption completed in %v", operationDuration.Truncate(time.Millisecond)))
-		} else {
-			app.UI.DisplayInfo("Encryption completed!")
 		}
 
 	case "dec":
-		if err := crypto.DecryptFiles(result.Secret, app.FilePaths); err != nil {
+		if err := crypto.DecryptFilesWithOptions(secret, app.FilePaths, app.Quiet); err != nil {
 			app.UI.DisplayError(fmt.Errorf("decryption failed: %w", err))
 			return err
 		}
 		operationDuration := time.Since(operationStartTime)
-		if app.LogLevel == "info" {
+		if app.LogLevel == "info" && !app.Quiet {
 			app.UI.DisplayInfo(fmt.Sprintf("Decryption completed in %v", operationDuration.Truncate(time.Millisecond)))
-		} else {
+		} else if !app.Quiet {
 			app.UI.DisplayInfo("Decryption completed!")
 		}
 
@@ -161,6 +86,8 @@ func runApplication(app *types.Application) error {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
+	// Create a result struct for compatibility with DisplayResults
+	result := &types.HMACResult{Secret: secret}
 	app.UI.DisplayResults(result)
 
 	return nil
@@ -179,11 +106,18 @@ func main() {
 	// Parse CLI flags for normal operation
 	keyOnly := flag.Bool("key-only", false, "Output only the derived key to stdout (useful for scripting)")
 	mode := flag.String("mode", "", "Operation mode: encryption or decryption (enc|dec)")
-	fidoDevice := flag.String("fido-device", "", "Specify FIDO device path (e.g., /dev/hidraw10) to skip device selection")
 	pinEnvVar := flag.String("pin-environment-variable", "", "Environment variable name containing the PIN")
 	pinentry := flag.String("pinentry", "", "Pinentry program to use for secure PIN input (e.g., pinentry-gtk, /usr/local/bin/pinentry-gtk)")
 	logLevel := flag.String("log-level", "info", "Log level: info or debug")
+	quiet := flag.Bool("quiet", false, "Suppress progress output (useful for git filters)")
+	cacheDaemon := flag.String("cache-daemon", "", "Run as cache daemon with provided secret (internal use)")
 	flag.Parse()
+
+	// Handle cache daemon mode
+	if *cacheDaemon != "" {
+		cache.RunCacheDaemon(*cacheDaemon)
+		return
+	}
 
 	// Get file paths from remaining arguments
 	filePaths := flag.Args()
@@ -220,11 +154,11 @@ func main() {
 	app := NewApplication()
 	app.KeyOnly = *keyOnly
 	app.Config.Mode = *mode
-	app.FidoDevice = *fidoDevice
 	app.PinEnvVar = *pinEnvVar
 	app.Pinentry = *pinentry
 	app.FilePaths = filePaths
 	app.LogLevel = *logLevel
+	app.Quiet = *quiet
 
 	// Set log level on UI provider
 	if display, ok := app.UI.(*ui.Display); ok {

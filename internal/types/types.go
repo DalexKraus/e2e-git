@@ -51,6 +51,10 @@ type DeviceManager interface {
 	// Takes a slice of available devices and returns the selected device or an error.
 	SelectDevice(devices []*DeviceInfo) (*DeviceInfo, error)
 
+	// SelectFirstDevice automatically selects the first available device.
+	// This bypasses interactive device selection and always uses the first device found.
+	SelectFirstDevice(devices []*DeviceInfo) (*DeviceInfo, error)
+
 	// SelectDeviceByPath finds and returns a device with the specified path.
 	// This allows bypassing interactive device selection when the path is known.
 	SelectDeviceByPath(devices []*DeviceInfo, path string) (*DeviceInfo, error)
@@ -141,6 +145,7 @@ type Application struct {
 	Pinentry       string         // Pinentry program path (optional)
 	FilePaths      []string       // File paths to process
 	LogLevel       string         // Log level: info or debug
+	Quiet          bool           // Suppress progress output (useful for git filters)
 }
 
 // InitConfig holds configuration for the init command

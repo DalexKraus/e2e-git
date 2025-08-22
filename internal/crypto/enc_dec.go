@@ -13,6 +13,30 @@ import (
 	"strings"
 )
 
+// validateFilePaths checks for forbidden files/directories that should not be encrypted/decrypted
+func validateFilePaths(filePaths []string) error {
+	for _, path := range filePaths {
+		// Clean the path to normalize it
+		cleanPath := filepath.Clean(path)
+
+		// Check for root .git directory
+		if cleanPath == ".git" || cleanPath == "./.git" {
+			return fmt.Errorf("cannot process .git directory")
+		}
+
+		// Check for root .cred files
+		if strings.HasSuffix(cleanPath, ".cred") && !strings.Contains(cleanPath, "/") {
+			return fmt.Errorf("cannot process .cred files")
+		}
+
+		// Check for filter-wrapper.sh
+		if cleanPath == "filter-wrapper.sh" || cleanPath == "./filter-wrapper.sh" {
+			return fmt.Errorf("cannot process filter-wrapper.sh")
+		}
+	}
+	return nil
+}
+
 // expandPathsWithStats takes a list of paths and expands directories to their constituent files
 // Returns the expanded files and statistics about folders and files processed
 func expandPathsWithStats(paths []string) ([]string, *types.ProcessingStats, error) {
@@ -88,8 +112,8 @@ func expandPathsWithStats(paths []string) ([]string, *types.ProcessingStats, err
 }
 
 // printProgressBar displays a progress bar for file processing
-func printProgressBar(current, total int, prefix string) {
-	if total == 0 {
+func printProgressBar(current, total int, prefix string, quiet bool) {
+	if total == 0 || quiet {
 		return
 	}
 
@@ -100,10 +124,10 @@ func printProgressBar(current, total int, prefix string) {
 	bar := strings.Repeat("█", filledWidth) + strings.Repeat("░", barWidth-filledWidth)
 	percentage := int(progress * 100)
 
-	fmt.Printf("\r%s [%s] %d%% (%d/%d)", prefix, bar, percentage, current, total)
+	fmt.Fprintf(os.Stderr, "\r%s [%s] %d%% (%d/%d)", prefix, bar, percentage, current, total)
 
 	if current == total {
-		fmt.Println() // New line when complete
+		fmt.Fprintln(os.Stderr) // New line when complete
 	}
 }
 
@@ -111,17 +135,20 @@ func printProgressBar(current, total int, prefix string) {
 // All files are backed up with .bak extension before processing.
 // If any operation fails, all files are restored from backups.
 func EncryptFiles(secret []byte, filePaths []string) error {
+	return EncryptFilesWithOptions(secret, filePaths, false)
+}
+
+// EncryptFilesWithOptions encrypts multiple files with quiet option.
+func EncryptFilesWithOptions(secret []byte, filePaths []string, quiet bool) error {
+	// Validate file paths for safety
+	if err := validateFilePaths(filePaths); err != nil {
+		return err
+	}
+
 	// Expand directories to individual files and get statistics
 	expandedPaths, stats, err := expandPathsWithStats(filePaths)
 	if err != nil {
 		return fmt.Errorf("failed to expand paths: %w", err)
-	}
-
-	// Display initial message with file and folder counts
-	if stats.TotalFolders > 0 {
-		fmt.Printf("[+] Encrypting %d file(s) from %d folder(s)...\n", stats.TotalFiles, stats.TotalFolders)
-	} else {
-		fmt.Printf("[+] Encrypting %d file(s)...\n", stats.TotalFiles)
 	}
 
 	// Create AES-GCM cipher once for all files (performance optimization)
@@ -144,10 +171,12 @@ func EncryptFiles(secret []byte, filePaths []string) error {
 
 	// Create backups with progress
 	for i, filePath := range expandedPaths {
-		printProgressBar(i+1, len(expandedPaths), "Creating backups")
+		printProgressBar(i+1, len(expandedPaths), "Creating backups", quiet)
 		backupPath := filePath + ".bak"
 		if err := copyFile(filePath, backupPath); err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			cleanupBackups(backups)
 			return fmt.Errorf("failed to create backup for %s: %w", filePath, err)
 		}
@@ -156,13 +185,15 @@ func EncryptFiles(secret []byte, filePaths []string) error {
 
 	// Encrypt to temporary files with progress
 	for i, filePath := range expandedPaths {
-		printProgressBar(i+1, len(expandedPaths), "Encrypting files")
+		printProgressBar(i+1, len(expandedPaths), "Encrypting files", quiet)
 		tempPath := filePath + ".encrypted.tmp"
 
 		// Read file
 		plaintext, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to read %s: %w", filePath, err)
@@ -171,7 +202,9 @@ func EncryptFiles(secret []byte, filePaths []string) error {
 		// Generate random nonce
 		nonce := make([]byte, gcm.NonceSize())
 		if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to generate nonce: %w", err)
@@ -182,7 +215,9 @@ func EncryptFiles(secret []byte, filePaths []string) error {
 
 		// Write encrypted file
 		if err := os.WriteFile(tempPath, ciphertext, 0644); err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to write encrypted %s: %w", tempPath, err)
@@ -209,6 +244,16 @@ func EncryptFiles(secret []byte, filePaths []string) error {
 // All files are backed up with .bak extension before processing.
 // If any operation fails, all files are restored from backups.
 func DecryptFiles(secret []byte, filePaths []string) error {
+	return DecryptFilesWithOptions(secret, filePaths, false)
+}
+
+// DecryptFilesWithOptions decrypts multiple files with quiet option.
+func DecryptFilesWithOptions(secret []byte, filePaths []string, quiet bool) error {
+	// Validate file paths for safety
+	if err := validateFilePaths(filePaths); err != nil {
+		return err
+	}
+
 	// Expand directories to individual files and get statistics
 	expandedPaths, stats, err := expandPathsWithStats(filePaths)
 	if err != nil {
@@ -216,10 +261,12 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 	}
 
 	// Display initial message with file and folder counts
-	if stats.TotalFolders > 0 {
-		fmt.Printf("[+] Decrypting %d file(s) from %d folder(s)...\n", stats.TotalFiles, stats.TotalFolders)
-	} else {
-		fmt.Printf("[+] Decrypting %d file(s)...\n", stats.TotalFiles)
+	if !quiet {
+		if stats.TotalFolders > 0 {
+			fmt.Fprintf(os.Stderr, "[+] Decrypting %d file(s) from %d folder(s)...\n", stats.TotalFiles, stats.TotalFolders)
+		} else {
+			fmt.Fprintf(os.Stderr, "[+] Decrypting %d file(s)...\n", stats.TotalFiles)
+		}
 	}
 
 	// Create AES-GCM cipher once for all files (performance optimization)
@@ -242,10 +289,12 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 
 	// Create backups with progress
 	for i, filePath := range expandedPaths {
-		printProgressBar(i+1, len(expandedPaths), "Creating backups")
+		printProgressBar(i+1, len(expandedPaths), "Creating backups", quiet)
 		backupPath := filePath + ".bak"
 		if err := copyFile(filePath, backupPath); err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			cleanupBackups(backups)
 			return fmt.Errorf("failed to create backup for %s: %w", filePath, err)
 		}
@@ -254,13 +303,15 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 
 	// Decrypt to temporary files with progress
 	for i, filePath := range expandedPaths {
-		printProgressBar(i+1, len(expandedPaths), "Decrypting files")
+		printProgressBar(i+1, len(expandedPaths), "Decrypting files", quiet)
 		tempPath := filePath + ".decrypted.tmp"
 
 		// Read encrypted file
 		ciphertext, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to read %s: %w", filePath, err)
@@ -269,7 +320,9 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 		// Extract nonce and decrypt
 		nonceSize := gcm.NonceSize()
 		if len(ciphertext) < nonceSize {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("ciphertext too short in %s", filePath)
@@ -278,7 +331,9 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 		nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 		if err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to decrypt %s: %w", filePath, err)
@@ -286,7 +341,9 @@ func DecryptFiles(secret []byte, filePaths []string) error {
 
 		// Write decrypted file
 		if err := os.WriteFile(tempPath, plaintext, 0644); err != nil {
-			fmt.Println() // New line after progress bar
+			if !quiet {
+				fmt.Fprintln(os.Stderr) // New line after progress bar
+			}
 			restoreFromBackups(backups)
 			cleanupTemps(temps)
 			return fmt.Errorf("failed to write decrypted %s: %w", tempPath, err)

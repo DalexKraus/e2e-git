@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"path/filepath"
 )
 
 // InitConfig holds configuration for the init command
@@ -44,82 +43,76 @@ func (ic *InitCommand) Execute() error {
 		ic.Config.BinaryPath = binaryPath
 	}
 
-	// Get templates directory (relative to binary location)
-	templatesDir, err := ic.getTemplatesDir()
-	if err != nil {
-		return fmt.Errorf("failed to locate templates directory: %w", err)
-	}
+	// Create filter wrapper script content (without device ID)
+	filterContent := fmt.Sprintf(`#!/bin/bash
+# Git filter wrapper for FIDO2 encryption/decryption
+# Handles both clean (encrypt) and smudge (decrypt) operations
 
-	// Create template processor
-	templateConfig := &TemplateConfig{
-		BinaryPath:     ic.Config.BinaryPath,
-		DeviceID:       ic.Config.DeviceID,
-		PinentryMethod: ic.Config.PinentryMethod,
-	}
-	processor := NewTemplateProcessor(templatesDir, templateConfig)
+# Configuration
+BINARY_PATH="%s"
+PINENTRY_METHOD="%s"
 
-	// Validate templates exist
-	if err := processor.ValidateTemplates(); err != nil {
-		return fmt.Errorf("template validation failed: %w", err)
-	}
+# Determine operation mode from script name or first argument
+OPERATION=""
+if [[ "$0" == *"clean"* ]] || [[ "$1" == "clean" ]] || [[ "$1" == "encrypt" ]]; then
+    OPERATION="enc"
+elif [[ "$0" == *"smudge"* ]] || [[ "$1" == "smudge" ]] || [[ "$1" == "decrypt" ]]; then
+    OPERATION="dec"
+else
+    # Default to decrypt for backward compatibility
+    OPERATION="dec"
+fi
 
-	// Process and install pre-commit hook
-	preCommitContent, err := processor.GetPreCommitHook()
-	if err != nil {
-		return fmt.Errorf("failed to process pre-commit template: %w", err)
-	}
+# Read input from stdin and save to temporary file
+TEMP_FILE=$(mktemp)
+trap "rm -f '$TEMP_FILE'" EXIT
 
-	if err := gitRepo.InstallHook("pre-commit", preCommitContent); err != nil {
-		return fmt.Errorf("failed to install pre-commit hook: %w", err)
-	}
+cat > "$TEMP_FILE"
 
-	// Process and install filter wrapper
-	filterContent, err := processor.GetFilterWrapper()
-	if err != nil {
-		return fmt.Errorf("failed to process filter template: %w", err)
-	}
+# Process the file with FIDO2 encryption/decryption
+if "$BINARY_PATH" --mode="$OPERATION" --pinentry="$PINENTRY_METHOD" "$TEMP_FILE"; then
+    # Output the processed file content
+    cat "$TEMP_FILE"
+else
+    # On error, output original content unchanged
+    cat "$TEMP_FILE"
+    exit 1
+fi
+`, ic.Config.BinaryPath, ic.Config.PinentryMethod)
 
+	// Install filter wrapper script in hooks directory
 	if err := gitRepo.InstallFilterScript("filter-wrapper.sh", filterContent); err != nil {
 		return fmt.Errorf("failed to install filter script: %w", err)
 	}
 
-	// Configure git filter
-	filterScriptPath := "./filter-wrapper.sh"
-	if err := gitRepo.ConfigureFilter("crypt", "cat", filterScriptPath+" decrypt"); err != nil {
+	// Configure git filter to use script from hooks directory
+	filterScriptPath := ".git/hooks/filter-wrapper.sh"
+	if err := gitRepo.ConfigureFilter("crypt", filterScriptPath+" clean", filterScriptPath+" smudge"); err != nil {
 		return fmt.Errorf("failed to configure git filter: %w", err)
 	}
 
-	// Add git dec alias (from e2e-init)
-	decAlias := "!f(){ for f in \"$@\"; do rm -f -- \"$f\"; git checkout -- \"$f\"; done; }; f"
+	// Add git dec alias
+	decAlias := "!f(){ " +
+		"files=$(git ls-files '*.sec'); " +
+		"if [ -n \"$files\" ]; then " +
+		"for file in $files; do " +
+		"if [ -f \"$file\" ]; then " +
+		".git/hooks/filter-wrapper.sh smudge < \"$file\" > \"$file.tmp\" && mv \"$file.tmp\" \"$file\"; " +
+		"fi; " +
+		"done; " +
+		"fi; " +
+		"}; f"
 	if err := gitRepo.SetAlias("dec", decAlias); err != nil {
 		return fmt.Errorf("failed to set git dec alias: %w", err)
 	}
 
-	// Add git enc alias (opposite of dec - stages files for encryption)
-	encAlias := "!f(){ git add \"$@\"; }; f"
-	if err := gitRepo.SetAlias("enc", encAlias); err != nil {
-		return fmt.Errorf("failed to set git enc alias: %w", err)
-	}
-
 	return nil
-}
-
-// getTemplatesDir returns the path to the templates directory
-func (ic *InitCommand) getTemplatesDir() (string, error) {
-	// Templates are in hooks/ directory relative to the binary
-	binaryDir := filepath.Dir(ic.Config.BinaryPath)
-	templatesDir := filepath.Join(binaryDir, "hooks")
-	return templatesDir, nil
 }
 
 // ValidateConfig validates the init configuration
 func (ic *InitCommand) ValidateConfig() error {
 	if ic.Config.TargetPath == "" {
 		return fmt.Errorf("target path is required")
-	}
-
-	if ic.Config.DeviceID == "" {
-		return fmt.Errorf("device ID is required")
 	}
 
 	if ic.Config.PinentryMethod == "" {
