@@ -35,7 +35,7 @@ The build script checks dependencies, downloads Go modules, builds the `e2e-git`
 
 Initialize a repository:
 ```bash
-./e2e-git init --pinentry=pinentry-gtk .
+e2e-git init --pinentry=pinentry-gtk .
 ```
 
 Configure encryption in `.gitattributes`:
@@ -55,32 +55,16 @@ Decrypt files:
 ```bash
 git dec secrets/api-key.txt
 # or
-./e2e-git --mode=dec --pinentry=pinentry-gtk secrets/api-key.txt
+e2e-git --mode=dec --pinentry=pinentry-gtk secrets/api-key.txt
 ```
 
 ## Commands
 
 ### Initialization
 ```bash
-./e2e-git init --pinentry=PROGRAM <repository-path>
+e2e-git init --pinentry=PROGRAM <repository-path>
 ```
-
 Sets up Git repository for encryption. Installs pre-commit hook, configures Git filter, creates `git dec` alias, and installs filter wrapper script.
-
-### Encryption
-```bash
-./e2e-git --mode=enc [OPTIONS] <file1> [file2] ...
-```
-
-### Decryption
-```bash
-./e2e-git --mode=dec [OPTIONS] <file1> [file2] ...
-```
-
-### Git Alias
-```bash
-git dec <file1> [file2] ...
-```
 
 ## Command Options
 
@@ -91,24 +75,23 @@ Required options:
   - `--pinentry=PROGRAM`: Use pinentry program
 
 Optional options:
-- `--fido-device=PATH`: Specify device path
 - `--key-only`: Output only derived key
 - `--log-level=LEVEL`: `info` or `debug`
 
 Examples:
 ```bash
 # Encrypt with pinentry
-./e2e-git --mode=enc --pinentry=pinentry-gtk secrets/config.env
+e2e-git --mode=enc --pinentry=pinentry-gtk secrets/config.env
 
 # Decrypt with environment variable
 export FIDO_PIN="123456"
-./e2e-git --mode=dec --pin-environment-variable=FIDO_PIN secrets/config.env
-
-# Specify device
-./e2e-git --mode=enc --fido-device=/dev/hidraw10 --pinentry=pinentry-gtk file.txt
+e2e-git --mode=dec --pin-environment-variable=FIDO_PIN secrets/config.env
 
 # Key-only output
-./e2e-git --key-only --pinentry=pinentry-gtk
+e2e-git --key-only --pinentry=pinentry-gtk
+
+# Debug logging
+e2e-git --mode=enc --log-level=debug --pinentry=pinentry-gtk file.txt
 ```
 
 ## PIN Input Methods
@@ -116,12 +99,12 @@ export FIDO_PIN="123456"
 Environment variable method:
 ```bash
 export FIDO_PIN="123456"
-./e2e-git --mode=enc --pin-environment-variable=FIDO_PIN file.txt
+e2e-git --mode=enc --pin-environment-variable=FIDO_PIN file.txt
 ```
 
 Pinentry program method:
 ```bash
-./e2e-git --mode=enc --pinentry=pinentry-gtk file.txt
+e2e-git --mode=enc --pinentry=pinentry-gtk file.txt
 ```
 
 Use one pinentry program that you have installed. Examples: `pinentry-gtk`, `pinentry-qt`, `pinentry-curses`, `pinentry-tty`.
@@ -129,11 +112,11 @@ Use one pinentry program that you have installed. Examples: `pinentry-gtk`, `pin
 ## Git Integration
 
 The program uses Git's filter system with:
-- Clean filter: `cat` (files stored encrypted)
-- Smudge filter: `./filter-wrapper.sh decrypt` (files decrypted in working directory)
+- Clean filter: `.git/hooks/filter-wrapper.sh clean` (files stored encrypted in repository)
+- Smudge filter: `.git/hooks/filter-wrapper.sh smudge` (files decrypted in working directory)
 - Filter name: `crypt`
 
-Pre-commit hook ensures files marked for encryption are properly encrypted before commits.
+The filter wrapper script automatically determines the operation mode and calls the e2e-git binary with the appropriate `--mode=enc` (for clean) or `--mode=dec` (for smudge) parameters. The system includes a persistent cache daemon that reduces FIDO2 device interactions by caching derived secrets via Unix domain sockets.
 
 Configure encryption patterns in `.gitattributes`:
 ```
@@ -151,37 +134,28 @@ config/production/** filter=crypt
 database.conf filter=crypt
 ```
 
-The `git dec` or `git enc` alias provides convenient decryption:
+The `git dec` alias provides convenient decryption:
 ```bash
 git dec secrets/api-key.txt
-git enc secrets/key1.pem secrets/key2.pem config/prod.env
+git dec  # Decrypts all files specified in .gitattributes
 ```
 
 ## Advanced Features
 
-Device selection:
+**Key-only Output** for scripting:
 ```bash
-# Interactive selection (default)
-./e2e-git --mode=enc --pinentry=pinentry-gtk file.txt
-
-# Specify device path manually
-./e2e-git --mode=enc --fido-device=/dev/hidraw10 --pinentry=pinentry-gtk file.txt
+KEY=$(e2e-git --key-only --pinentry=pinentry-gtk)
 ```
 
-Key-only output for scripting:
+**Debug Logging**:
 ```bash
-KEY=$(./e2e-git --key-only --pinentry=pinentry-gtk)
+e2e-git --mode=enc --log-level=debug --pinentry=pinentry-gtk file.txt
 ```
 
-Debug logging:
-```bash
-./e2e-git --mode=enc --log-level=debug --pinentry=pinentry-gtk file.txt
-```
-
-Non-interactive mode:
+**Non-interactive Mode**:
 ```bash
 export FIDO_PIN="123456"
-./e2e-git --mode=enc --pin-environment-variable=FIDO_PIN --fido-device=/dev/hidraw10 file.txt
+e2e-git --mode=enc --pin-environment-variable=FIDO_PIN file.txt
 ```
 
 ## Example Workflow
@@ -246,6 +220,7 @@ git dec config/production.env secrets.json
 ```
 
 Share repository:
+*NOTE: Make sure .gitattributes and the credential file are in the repository!*
 ```bash
 git remote add origin https://github.com/username/my-secure-project.git
 git push -u origin main
@@ -256,16 +231,13 @@ Clone on another machine:
 git clone https://github.com/username/my-secure-project.git
 cd my-secure-project
 cp /path/to/e2e-git .
-./e2e-git init --pinentry=pinentry-gtk .
+e2e-git init --pinentry=pinentry-gtk .
+
+# Decrypt all encrypted files after clone
+git dec
 ```
 
 ## Troubleshooting
-
-Device detection issues:
-```
-Found 0 FIDO2 device(s)
-```
-Solutions: Check device connection, verify permissions (`ls -la /dev/hidraw*`), add user to plugdev group (`sudo usermod -a -G plugdev $USER`).
 
 Permission denied:
 ```
@@ -274,15 +246,11 @@ device validation failed: permission denied
 Solutions: Check udev rules, add user to plugdev group, log out and back in after group changes.
 
 Build problems:
-```
-pkg-config: libfido2 not found
-```
-Solutions: Install libfido2 development packages (`sudo apt-get install libfido2-dev`).
 
 ```
 Go version too old
 ```
-Solutions: Update Go to 1.21+.
+Solutions: Update Go to 1.23+.
 
 PIN entry issues:
 ```
@@ -290,13 +258,20 @@ pinentry program not found
 ```
 Solutions: Install pinentry (`sudo apt-get install pinentry-gtk2`), use different pinentry program, or use environment variable method.
 
-Git integration issues:
+**Git integration issues:**
 ```
 Files not being encrypted during commit
 ```
-Solutions: Verify `.gitattributes` syntax, check `filter-wrapper.sh` is executable (`chmod +x filter-wrapper.sh`), re-run initialization, verify Git filter configuration (`git config --list | grep filter.crypt`).
+Solutions: 
+- Verify `.gitattributes` syntax and patterns
+- Check filter wrapper script: `ls -la .git/hooks/filter-wrapper.sh`
+- Re-run initialization: `e2e-git init --pinentry=pinentry-gtk .`
+- Verify Git filter configuration: `git config --list | grep filter.crypt`
 
 ```
-Pre-commit hook not running
+Files remain encrypted after clone
 ```
-Solutions: Check hook is executable (`ls -la .git/hooks/pre-commit`), verify hook content, re-run initialization.
+Solutions:
+- Run `git dec` to decrypt all files specified in .gitattributes after cloning
+- Ensure e2e-git is properly initialized (e2e-git init) in the new repository
+- Verify FIDO2 device is connected and accessible
