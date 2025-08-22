@@ -64,13 +64,13 @@ check_libfido2() {
         exit 1
     fi
 
-    # Check for libfido2
-    if ! pkg-config --exists pinentry-gtk; then
-        print_error "pinentry-gtk not found"
-        print_error "Install with: sudo apt-get install pinentry-gtk"
-        exit 1
+    # Check for pinentry-gtk-2
+    if ! command -v pinentry-gtk-2 >/dev/null 2>&1; then
+        print_error "pinentry-gtk-2 not found"
+	print_error "Install with: sudo apt-get install pinentry-gtk2"
+	exit 1
     fi
-    
+
     LIBFIDO2_VERSION=$(pkg-config --modversion libfido2)
     print_status "Found libfido2 version: $LIBFIDO2_VERSION"
 }
